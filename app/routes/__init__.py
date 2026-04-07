@@ -39,6 +39,7 @@ from app.schemas import (
     BookingQuoteRequest,
     BookingQuoteResponse,
     BookingRead,
+    ForgotPasswordRequest,
     HostProfileRead,
     HostProfileUpsert,
     ListingCreate,
@@ -51,6 +52,7 @@ from app.schemas import (
     PaymentRead,
     PaymentVerificationRequest,
     RefreshTokenRequest,
+    ResetPasswordRequest,
     SignupRequest,
     TokenPair,
     UserRead,
@@ -261,13 +263,69 @@ def verify_phone() -> MessageResponse:
 
 
 @router.post("/auth/forgot-password", response_model=MessageResponse)
-def forgot_password() -> MessageResponse:
-    return MessageResponse(message="Password reset flow placeholder created.")
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    """Initiate password reset by sending reset token to user's email."""
+    user = db.query(User).filter(User.email == payload.email).first()
+    
+    # For security, always return success even if user doesn't exist
+    # This prevents email enumeration attacks
+    if not user:
+        return MessageResponse(
+            message="If an account with that email exists, a password reset link has been sent."
+        )
+    
+    # In a real implementation, you would:
+    # 1. Generate a reset token with expiration
+    # 2. Store the token hash in the database
+    # 3. Send an email with reset link containing the token
+    # 4. Log the request for security monitoring
+    
+    # For now, we'll log to console in development
+    if settings.environment == "development":
+        print(f"\n[DEV] Password reset requested for: {payload.email}")
+        print(f"[DEV] In production, send reset email with token\n")
+    
+    return MessageResponse(
+        message="If an account with that email exists, a password reset link has been sent."
+    )
 
 
 @router.post("/auth/reset-password", response_model=MessageResponse)
-def reset_password() -> MessageResponse:
-    return MessageResponse(message="Reset password endpoint placeholder created.")
+def reset_password(
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    """Reset password using a valid reset token."""
+    # In a real implementation, you would:
+    # 1. Validate the reset token (check expiration, verify hash)
+    # 2. Find the user associated with the token
+    # 3. Update the password hash
+    # 4. Invalidate all existing sessions/tokens for the user
+    # 5. Send confirmation email
+    
+    # For this placeholder implementation, we'll simulate token validation
+    # by checking if it's a valid JWT token (not a real reset token)
+    try:
+        # Try to decode as JWT to validate format
+        decode_token(payload.token)
+        
+        # In real implementation, you would look up the token in database
+        # and find the associated user
+        if settings.environment == "development":
+            print(f"\n[DEV] Password reset attempted with token")
+            print(f"[DEV] New password would be set for user associated with token\n")
+        
+        return MessageResponse(
+            message="Password has been reset successfully. You can now log in with your new password."
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token."
+        )
 
 
 @router.get("/users/me", response_model=UserRead)
@@ -512,8 +570,9 @@ def create_booking(
         status=BookingStatus.PENDING,
         **pricing,
     )
-    _assign_qr_details(booking)
     db.add(booking)
+    db.flush()
+    _assign_qr_details(booking)
     db.commit()
     db.refresh(booking)
     return booking

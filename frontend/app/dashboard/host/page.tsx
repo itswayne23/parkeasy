@@ -1,8 +1,10 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-
+import { DashboardSidebar } from "@/components/dashboard-sidebar";
+import { DashboardMetricCard } from "@/components/dashboard-metric-card";
+import { MotionReveal } from "@/components/motion-reveal";
 import {
   clearSession,
   createListing,
@@ -13,9 +15,8 @@ import {
   getAccessToken,
   publishListing,
   unpublishListing,
-  upsertHostProfile
+  upsertHostProfile,
 } from "@/lib/api";
-import { hostMetrics } from "@/lib/mock-data";
 import type { HostMetricResponse, HostProfile, ListingCard, ListingPayload } from "@/lib/types";
 
 const parkingTypes = [
@@ -23,12 +24,12 @@ const parkingTypes = [
   { value: "garage", label: "Garage" },
   { value: "lot", label: "Lot" },
   { value: "basement", label: "Basement" },
-  { value: "street_adjacent", label: "Street adjacent" }
+  { value: "street_adjacent", label: "Street adjacent" },
 ];
 
 const hostTypeOptions = [
   { value: "individual_host", label: "Individual host" },
-  { value: "commercial_host", label: "Commercial host" }
+  { value: "commercial_host", label: "Commercial host" },
 ];
 
 const weekdayOptions = [
@@ -39,18 +40,25 @@ const weekdayOptions = [
   { value: "3", label: "Thursday" },
   { value: "4", label: "Friday" },
   { value: "5", label: "Saturday" },
-  { value: "6", label: "Sunday" }
+  { value: "6", label: "Sunday" },
 ];
 
-export default function HostDashboardPage() {
+function splitCsv(value: string): string[] {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function formatLabel(value: string): string {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+export default function HostDashboard() {
   const [userName, setUserName] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<HostMetricResponse | null>(null);
   const [profile, setProfile] = useState<HostProfile | null>(null);
   const [listings, setListings] = useState<ListingCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [profileMessage, setProfileMessage] = useState<string | null>(null);
-  const [listingMessage, setListingMessage] = useState<string | null>(null);
+  const [tab, setTab] = useState("overview");
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingListing, setSavingListing] = useState(false);
   const [publishingId, setPublishingId] = useState<string | null>(null);
@@ -59,7 +67,7 @@ export default function HostDashboardPage() {
     business_name: "",
     bio: "",
     tax_id: "",
-    photo_url: ""
+    photo_url: "",
   });
   const [listingForm, setListingForm] = useState({
     title: "",
@@ -86,111 +94,80 @@ export default function HostDashboardPage() {
     availability_day_of_week: "all",
     availability_start_time: "00:00",
     availability_end_time: "23:59",
-    min_duration_hours: "1"
+    min_duration_hours: "1",
   });
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
-    const sessionToken = token;
+    if (!token) { setLoading(false); return; }
 
     async function loadHostWorkspace() {
       try {
         const [user, hostMetricsData, listingData] = await Promise.all([
-          fetchMe(sessionToken),
-          fetchHostMetrics(sessionToken),
-          fetchMyListings(sessionToken)
+          fetchMe(token),
+          fetchHostMetrics(token),
+          fetchMyListings(token),
         ]);
-
         setUserName(user.full_name);
         setMetrics(hostMetricsData);
         setListings(listingData);
-
         try {
-          const hostProfile = await fetchHostProfile(sessionToken);
+          const hostProfile = await fetchHostProfile(token);
           setProfile(hostProfile);
           setProfileForm({
             host_type: hostProfile.host_type,
             business_name: hostProfile.business_name ?? "",
             bio: hostProfile.bio ?? "",
             tax_id: "",
-            photo_url: hostProfile.photo_url ?? ""
+            photo_url: hostProfile.photo_url ?? "",
           });
           setListingForm((current) => ({ ...current, host_type: hostProfile.host_type }));
-        } catch {
-          setProfile(null);
-        }
+        } catch { setProfile(null); }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to load host dashboard");
-      } finally {
-        setLoading(false);
-      }
+      } finally { setLoading(false); }
     }
-
     void loadHostWorkspace();
   }, []);
 
   async function reloadHostData(token: string) {
-    const [hostMetricsData, listingData] = await Promise.all([fetchHostMetrics(token), fetchMyListings(token)]);
-    setMetrics(hostMetricsData);
-    setListings(listingData);
-    try {
-      const hostProfile = await fetchHostProfile(token);
-      setProfile(hostProfile);
-    } catch {
-      setProfile(null);
-    }
+    const [hm, ld] = await Promise.all([fetchHostMetrics(token), fetchMyListings(token)]);
+    setMetrics(hm);
+    setListings(ld);
+    try { setProfile(await fetchHostProfile(token)); } catch { setProfile(null); }
   }
 
   async function handleProfileSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const token = getAccessToken();
-    if (!token) {
-      setError("Sign in to manage your host profile.");
-      return;
-    }
+    if (!token) { setError("Sign in to manage your host profile."); return; }
 
     setSavingProfile(true);
-    setProfileMessage(null);
     setError(null);
     try {
-      const savedProfile = await upsertHostProfile(
+      const saved = await upsertHostProfile(
         {
           host_type: profileForm.host_type,
           business_name: profileForm.business_name || null,
           bio: profileForm.bio || null,
           tax_id: profileForm.tax_id || null,
-          photo_url: profileForm.photo_url || null
+          photo_url: profileForm.photo_url || null,
         },
-        token
+        token,
       );
-      setProfile(savedProfile);
-      setListingForm((current) => ({ ...current, host_type: savedProfile.host_type }));
+      setProfile(saved);
       await reloadHostData(token);
-      setProfileMessage("Host profile saved. You can create and publish listings now.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save host profile");
-    } finally {
-      setSavingProfile(false);
-    }
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to save"); }
+    finally { setSavingProfile(false); }
   }
 
   async function handleListingSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const token = getAccessToken();
-    if (!token) {
-      setError("Sign in to create listings.");
-      return;
-    }
+    if (!token) { setError("Sign in to create listings."); return; }
 
     setSavingListing(true);
-    setListingMessage(null);
     setError(null);
-
     const payload: ListingPayload = {
       title: listingForm.title,
       description: listingForm.description || null,
@@ -209,243 +186,297 @@ export default function HostDashboardPage() {
       hourly_rate: Number(listingForm.hourly_rate),
       daily_rate: Number(listingForm.daily_rate),
       busy_area: listingForm.busy_area,
-      spaces: [
-        {
-          label: listingForm.space_label,
-          capacity: Number(listingForm.space_capacity),
-          size_label: listingForm.space_size_label || null,
-          has_ev_charger: listingForm.space_has_ev_charger
-        }
-      ],
-      availability_rules: [
-        {
-          day_of_week: listingForm.availability_day_of_week === "all" ? null : Number(listingForm.availability_day_of_week),
-          start_time: `${listingForm.availability_start_time}:00`,
-          end_time: `${listingForm.availability_end_time}:00`,
-          is_available: true,
-          min_duration_hours: Number(listingForm.min_duration_hours)
-        }
-      ]
+      spaces: [{
+        label: listingForm.space_label,
+        capacity: Number(listingForm.space_capacity),
+        size_label: listingForm.space_size_label || null,
+        has_ev_charger: listingForm.space_has_ev_charger,
+      }],
+      availability_rules: [{
+        day_of_week: listingForm.availability_day_of_week === "all" ? null : Number(listingForm.availability_day_of_week),
+        start_time: `${listingForm.availability_start_time}:00`,
+        end_time: `${listingForm.availability_end_time}:00`,
+        is_available: true,
+        min_duration_hours: Number(listingForm.min_duration_hours),
+      }],
     };
-
     try {
       await createListing(payload, token);
       await reloadHostData(token);
-      setListingMessage("Listing created in draft mode. Publish it when the details look right.");
-      setListingForm((current) => ({
-        ...current,
-        title: "",
-        description: "",
-        display_address: "",
-        vehicle_types: "sedan, hatchback",
-        amenities: "cctv, qr access",
-        photo_urls: "",
-        access_instructions: ""
-      }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create listing");
-    } finally {
-      setSavingListing(false);
-    }
+      setListingForm((c) => ({ ...c, title: "", description: "", display_address: "", vehicle_types: "sedan, hatchback", amenities: "cctv, qr access", photo_urls: "" }));
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to create"); }
+    finally { setSavingListing(false); }
   }
 
   async function handleTogglePublish(listing: ListingCard) {
     const token = getAccessToken();
-    if (!token) {
-      setError("Sign in to manage listings.");
-      return;
-    }
-
+    if (!token) return;
     setPublishingId(listing.id);
-    setListingMessage(null);
-    setError(null);
     try {
       if (listing.status.toLowerCase() === "published") {
         await unpublishListing(listing.id, token);
-        setListingMessage(`"${listing.title}" moved back to draft.`);
       } else {
         await publishListing(listing.id, token);
-        setListingMessage(`"${listing.title}" is now live.`);
       }
       await reloadHostData(token);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to update listing status");
-    } finally {
-      setPublishingId(null);
-    }
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to update"); }
+    finally { setPublishingId(null); }
   }
 
+  if (loading) {
+    return (
+      <div className="dashboard-shell">
+        <DashboardSidebar type="host" userName="Host" />
+        <main className="dash-main"><p className="subtle">Loading...</p></main>
+      </div>
+    );
+  }
+
+  if (!getAccessToken()) {
+    return (
+      <div className="dashboard-shell">
+        <DashboardSidebar type="host" userName="Host" />
+        <main className="dash-main">
+          <div className="empty-state">
+            <div className="empty-state-icon">🔒</div>
+            <div className="empty-state-title">Sign in required</div>
+            <p>Please sign in to access your host dashboard.</p>
+            <Link className="button" href="/auth/sign-in">Sign in</Link>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  const tabs = [
+    { id: "overview", label: "Overview" },
+    { id: "listings", label: "Listings" },
+    { id: "create", label: "Create listing" },
+    { id: "bookings", label: "Bookings" },
+    { id: "earnings", label: "Earnings" },
+  ];
+
   return (
-    <main className="page page-stack">
-      <section className="hero hero-copy">
-        <span className="kicker">Host control room</span>
-        <h1 className="section-title">Monetize idle parking with the polish of a premium revenue platform.</h1>
-        <p className="lead">
-          {userName
-            ? `Viewing live host metrics for ${userName}.`
-            : "Sign in with the seeded host account to create listings, shape pricing, and manage supply from the live backend."}
-        </p>
-        <div className="inline-actions">
-          <Link className="button" href="/auth/sign-in">Use demo host account</Link>
-          <button className="button-secondary" onClick={() => { clearSession(); window.location.reload(); }} type="button">Reset session</button>
+    <div className="dashboard-shell">
+      <DashboardSidebar type="host" userName={userName ?? "Host"} />
+      <main className="dash-main">
+        <div className="dash-header">
+          <h1 className="dash-title">Host Console</h1>
+          <p className="subtle">Monetize idle parking with a premium revenue platform</p>
         </div>
-      </section>
-      <section className="stats-row">
-        {hostMetrics.map((item, index) => (
-          <article className="dashboard-card" key={item.label}>
-            <span className="kicker">{item.label}</span>
-            <div className="value">
-              {metrics
-                ? index === 0
-                  ? metrics.listings
-                  : index === 1
-                    ? `Rs ${metrics.gross_earnings}`
-                    : metrics.bookings
-                : item.value}
-            </div>
-            <div className="footnote">{item.note}</div>
-          </article>
-        ))}
-      </section>
-      <section className="dual-panel">
-        <article className="command-card">
-          <div className="dashboard-head">
-            <div>
-              <span className="kicker">Host approval</span>
-              <h2 className="display-title">
-                {profile ? "Your host identity is now part of the live system." : "Set up your host profile before you scale supply."}
-              </h2>
-            </div>
-            <span className="pill">{formatLabel(metrics?.approval_status ?? "pending setup")}</span>
-          </div>
-          <p className="lead">
-            {profile
-              ? `${profile.is_identity_verified ? "Identity is verified." : "Identity verification is still pending."} Keep the profile polished so moderation and supply launch stay fast.`
-              : "Create your host profile first so listing creation, moderation, and future payout flows all anchor to a real host identity."}
-          </p>
-        </article>
-        <article className="panel">
-          <span className="kicker">Supply snapshot</span>
-          <div className="list">
-            {listings.map((listing) => (
-              <div className="glass-card" key={listing.id}>
-                <strong>{listing.title}</strong>
-                <div className="subtle">{listing.status} · {listing.address}</div>
-              </div>
-            ))}
-            {!loading && listings.length === 0 ? <div className="subtle">No live host listings yet. Create your first one below.</div> : null}
-          </div>
-        </article>
-      </section>
-      <section className="split">
-        <form className="form-card" onSubmit={handleProfileSubmit}>
-          <div className="dashboard-head">
-            <div>
-              <span className="kicker">Host onboarding</span>
-              <h2 className="display-title">Make your host profile real.</h2>
-            </div>
-            {profile ? <span className="pill">{formatLabel(profile.approval_status)}</span> : null}
-          </div>
-          <div className="field">
-            <label>Host type</label>
-            <select value={profileForm.host_type} onChange={(event) => setProfileForm({ ...profileForm, host_type: event.target.value })}>
-              {hostTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </div>
-          <div className="field"><label>Business name</label><input value={profileForm.business_name} onChange={(event) => setProfileForm({ ...profileForm, business_name: event.target.value })} type="text" placeholder="Optional for individual hosts" /></div>
-          <div className="field"><label>Bio</label><textarea value={profileForm.bio} onChange={(event) => setProfileForm({ ...profileForm, bio: event.target.value })} rows={4} placeholder="Tell renters why your space is reliable, safe, and easy to access." /></div>
-          <div className="field"><label>Tax ID</label><input value={profileForm.tax_id} onChange={(event) => setProfileForm({ ...profileForm, tax_id: event.target.value })} type="text" placeholder="Optional for now" /></div>
-          <div className="field"><label>Photo URL</label><input value={profileForm.photo_url} onChange={(event) => setProfileForm({ ...profileForm, photo_url: event.target.value })} type="url" placeholder="https://example.com/host.jpg" /></div>
-          {profileMessage ? <div className="subtle">{profileMessage}</div> : null}
-          <div className="inline-actions">
-            <button className="button" type="submit" disabled={savingProfile}>{savingProfile ? "Saving..." : profile ? "Update host profile" : "Create host profile"}</button>
-          </div>
-        </form>
-        <form className="form-card" onSubmit={handleListingSubmit}>
-          <div className="dashboard-head">
-            <div>
-              <span className="kicker">Create listing</span>
-              <h2 className="display-title">Launch the next parking space.</h2>
-            </div>
-          </div>
-          <div className="field"><label>Title</label><input value={listingForm.title} onChange={(event) => setListingForm({ ...listingForm, title: event.target.value })} type="text" placeholder="Glass canopy driveway near GS Road" required /></div>
-          <div className="field"><label>Description</label><textarea value={listingForm.description} onChange={(event) => setListingForm({ ...listingForm, description: event.target.value })} rows={4} placeholder="Describe access, trust signals, and what makes the spot easy to choose." /></div>
-          <div className="field">
-            <label>Parking type</label>
-            <select value={listingForm.parking_type} onChange={(event) => setListingForm({ ...listingForm, parking_type: event.target.value })}>
-              {parkingTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </div>
-          <div className="field"><label>Address</label><input value={listingForm.display_address} onChange={(event) => setListingForm({ ...listingForm, display_address: event.target.value })} type="text" placeholder="Christian Basti, Guwahati" required /></div>
-          <div className="field"><label>City</label><input value={listingForm.city} onChange={(event) => setListingForm({ ...listingForm, city: event.target.value })} type="text" required /></div>
-          <div className="field"><label>State</label><input value={listingForm.state} onChange={(event) => setListingForm({ ...listingForm, state: event.target.value })} type="text" required /></div>
-          <div className="field"><label>Country</label><input value={listingForm.country} onChange={(event) => setListingForm({ ...listingForm, country: event.target.value })} type="text" required /></div>
-          <div className="field"><label>Latitude</label><input value={listingForm.latitude} onChange={(event) => setListingForm({ ...listingForm, latitude: event.target.value })} type="number" step="0.0001" required /></div>
-          <div className="field"><label>Longitude</label><input value={listingForm.longitude} onChange={(event) => setListingForm({ ...listingForm, longitude: event.target.value })} type="number" step="0.0001" required /></div>
-          <div className="field"><label>Vehicle types</label><input value={listingForm.vehicle_types} onChange={(event) => setListingForm({ ...listingForm, vehicle_types: event.target.value })} type="text" placeholder="sedan, suv, hatchback" required /></div>
-          <div className="field"><label>Amenities</label><input value={listingForm.amenities} onChange={(event) => setListingForm({ ...listingForm, amenities: event.target.value })} type="text" placeholder="cctv, covered, qr access" /></div>
-          <div className="field"><label>Photo URLs</label><input value={listingForm.photo_urls} onChange={(event) => setListingForm({ ...listingForm, photo_urls: event.target.value })} type="text" placeholder="Comma-separated image URLs" /></div>
-          <div className="field"><label>Access instructions</label><textarea value={listingForm.access_instructions} onChange={(event) => setListingForm({ ...listingForm, access_instructions: event.target.value })} rows={3} placeholder="Gate code, call flow, landmark cues, or QR entry notes." /></div>
-          <div className="field"><label>Hourly rate (INR)</label><input value={listingForm.hourly_rate} onChange={(event) => setListingForm({ ...listingForm, hourly_rate: event.target.value })} type="number" min="0" step="1" required /></div>
-          <div className="field"><label>Daily rate (INR)</label><input value={listingForm.daily_rate} onChange={(event) => setListingForm({ ...listingForm, daily_rate: event.target.value })} type="number" min="0" step="1" required /></div>
-          <div className="field"><label>Space label</label><input value={listingForm.space_label} onChange={(event) => setListingForm({ ...listingForm, space_label: event.target.value })} type="text" required /></div>
-          <div className="field"><label>Capacity</label><input value={listingForm.space_capacity} onChange={(event) => setListingForm({ ...listingForm, space_capacity: event.target.value })} type="number" min="1" step="1" required /></div>
-          <div className="field"><label>Size label</label><input value={listingForm.space_size_label} onChange={(event) => setListingForm({ ...listingForm, space_size_label: event.target.value })} type="text" placeholder="Compact, standard, SUV-ready" /></div>
-          <div className="field"><label>Availability day</label><select value={listingForm.availability_day_of_week} onChange={(event) => setListingForm({ ...listingForm, availability_day_of_week: event.target.value })}>{weekdayOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-          <div className="field"><label>Availability start</label><input value={listingForm.availability_start_time} onChange={(event) => setListingForm({ ...listingForm, availability_start_time: event.target.value })} type="time" required /></div>
-          <div className="field"><label>Availability end</label><input value={listingForm.availability_end_time} onChange={(event) => setListingForm({ ...listingForm, availability_end_time: event.target.value })} type="time" required /></div>
-          <div className="field"><label>Minimum duration (hours)</label><input value={listingForm.min_duration_hours} onChange={(event) => setListingForm({ ...listingForm, min_duration_hours: event.target.value })} type="number" min="1" step="1" required /></div>
-          <label className="checkbox-row">
-            <input checked={listingForm.space_has_ev_charger} onChange={(event) => setListingForm({ ...listingForm, space_has_ev_charger: event.target.checked })} type="checkbox" />
-            <span>EV charger available</span>
-          </label>
-          <label className="checkbox-row">
-            <input checked={listingForm.busy_area} onChange={(event) => setListingForm({ ...listingForm, busy_area: event.target.checked })} type="checkbox" />
-            <span>Apply busy-area demand premium</span>
-          </label>
-          {listingMessage ? <div className="subtle">{listingMessage}</div> : null}
-          <div className="inline-actions">
-            <button className="button" type="submit" disabled={savingListing || !profile}>{savingListing ? "Creating..." : "Create listing draft"}</button>
-          </div>
-          {!profile ? <div className="subtle">Create the host profile first so the listing can attach to a live host account.</div> : null}
-        </form>
-      </section>
-      <section className="panel">
-        <div className="dashboard-head">
-          <div>
-            <span className="kicker">Listing pipeline</span>
-            <h2 className="display-title">Manage draft and live inventory.</h2>
-          </div>
-          <span className="pill">{listings.length} listings</span>
-        </div>
-        <div className="list">
-          {listings.map((listing) => (
-            <article className="glass-card" key={listing.id}>
-              <strong>{listing.title}</strong>
-              <div className="subtle">{listing.hostType} · {listing.address}</div>
-              <div className="subtle">Rs {listing.hourlyRate}/hr · Rs {listing.dailyRate}/day · {listing.status}</div>
-              <div className="inline-actions">
-                <button className="button-secondary" disabled={publishingId === listing.id} onClick={() => void handleTogglePublish(listing)} type="button">
-                  {publishingId === listing.id ? "Saving..." : listing.status.toLowerCase() === "published" ? "Move to draft" : "Publish listing"}
-                </button>
-              </div>
-            </article>
+
+        <div className="card-tabs">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              className={`card-tab ${tab === t.id ? "card-tab-active" : ""}`}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
           ))}
-          {!loading && listings.length === 0 ? <div className="subtle">Once you create a listing, it will appear here with a live publish toggle.</div> : null}
         </div>
-      </section>
-      {error ? <article className="panel"><p className="subtle">{error}</p></article> : null}
-    </main>
+
+        {error && (
+          <div className="empty-state" style={{ marginBottom: "1.5rem", borderColor: "var(--accent-3)" }}>
+            <div className="empty-state-icon">⚠️</div>
+            <div className="empty-state-title">Error</div>
+            <p>{error}</p>
+          </div>
+        )}
+
+        {tab === "overview" && (
+          <>
+            <div className="dash-metrics">
+              <DashboardMetricCard label="Active listings" value={metrics?.listings ?? 0} change={5} footnote="Published spaces" />
+              <DashboardMetricCard label="Gross earnings" value={`Rs ${metrics?.gross_earnings ?? "0"}`} change={12} footnote="Commission-first revenue" />
+              <DashboardMetricCard label="Conversion rate" value={`${metrics?.bookings ?? "%0"}%`} change={3} footnote="From listing to booking" />
+              <DashboardMetricCard label="Approval" value={formatLabel(profile?.approval_status ?? "pending")} footnote="Host identity status" />
+            </div>
+
+            <div className="quick-actions">
+              <button className="quick-action" onClick={() => setTab("create")}>
+                <span className="quick-action-icon">➕</span>Create listing
+              </button>
+              <button className="quick-action" onClick={() => setTab("listings")}>
+                <span className="quick-action-icon">📋</span>View listings
+              </button>
+              <button className="quick-action" onClick={() => setTab("earnings")}>
+                <span className="quick-action-icon">💰</span>Earnings
+              </button>
+              <Link className="quick-action" href={`/dashboard/host`}>
+                <span className="quick-action-icon">📅</span>All bookings
+              </Link>
+            </div>
+
+            <MotionReveal>
+              <div className="data-table-wrap">
+                <div className="data-table-header">
+                  <h3>Your Listings</h3>
+                  <span className="status-badge status-badge-active">{listings.length} total</span>
+                </div>
+                {listings.length === 0 ? (
+                  <div style={{ padding: "2.5rem", textAlign: "center" }}>
+                    <div className="empty-state">
+                      <div className="empty-state-icon">🏠</div>
+                      <div className="empty-state-title">No listings yet</div>
+                      <p>Create your first listing to start earning from your parking space.</p>
+                      <button className="button" onClick={() => setTab("create")}>Create listing</button>
+                    </div>
+                  </div>
+                ) : (
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Title</th>
+                        <th>Type</th>
+                        <th>Rate/hr</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {listings.map((l) => (
+                        <tr key={l.id}>
+                          <td><strong style={{ color: "var(--text)" }}>{l.title}</strong></td>
+                          <td>{l.hostType}</td>
+                          <td>Rs {l.hourlyRate}</td>
+                          <td>
+                            <span className={`status-badge status-badge-${l.status.toLowerCase() === "published" ? "published" : "draft"}`}>
+                              {l.status}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              className="nav-pill"
+                              disabled={publishingId === l.id}
+                              onClick={() => handleTogglePublish(l)}
+                            >
+                              {publishingId === l.id ? "..." : l.status.toLowerCase() === "published" ? "Unpublish" : "Publish"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </MotionReveal>
+          </>
+        )}
+
+        {tab === "listings" && (
+          <>
+            <MotionReveal>
+              <div className="data-table-wrap">
+                <div className="data-table-header">
+                  <h3>Listing Pipeline</h3>
+                  <span className="status-badge status-badge-active">{listings.length} listings</span>
+                </div>
+                {listings.length === 0 ? (
+                  <div style={{ padding: "2.5rem", textAlign: "center" }}>
+                    <div className="empty-state">
+                      <div className="empty-state-icon">📋</div>
+                      <div className="empty-state-title">No listings found</div>
+                      <p>Once you create a listing, it will appear here with a live publish toggle.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Title</th>
+                        <th>Host</th>
+                        <th>Location</th>
+                        <th>Rate/hr</th>
+                        <th>Rate/day</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {listings.map((l) => (
+                        <tr key={l.id}>
+                          <td><strong style={{ color: "var(--text)" }}>{l.title}</strong></td>
+                          <td>{l.hostType}</td>
+                          <td>{l.address}</td>
+                          <td>Rs {l.hourlyRate}</td>
+                          <td>Rs {l.dailyRate}</td>
+                          <td>
+                            <span className={`status-badge status-badge-${l.status.toLowerCase() === "published" ? "published" : "draft"}`}>
+                              {l.status}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              className="nav-pill"
+                              disabled={publishingId === l.id}
+                              onClick={() => handleTogglePublish(l)}
+                            >
+                              {publishingId === l.id ? "..." : l.status.toLowerCase() === "published" ? "Unpublish" : "Publish"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </MotionReveal>
+          </>
+        )}
+
+        {tab === "create" && (
+          <MotionReveal>
+            <form className="form-card" onSubmit={handleListingSubmit}>
+              <h2 className="display-title">Create a new listing</h2>
+              <p className="subtle">Launch the next parking space and attach it to your host profile.</p>
+              <div className="field"><label>Title</label><input value={listingForm.title} onChange={(e) => setListingForm({ ...listingForm, title: e.target.value })} type="text" placeholder="Glass canopy driveway near GS Road" required /></div>
+              <div className="field"><label>Description</label><textarea value={listingForm.description} onChange={(e) => setListingForm({ ...listingForm, description: e.target.value })} rows={4} placeholder="Describe access, trust signals, and what makes the spot easy to choose." /></div>
+              <div className="field"><label>Parking type</label><select value={listingForm.parking_type} onChange={(e) => setListingForm({ ...listingForm, parking_type: e.target.value })}>{parkingTypes.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+              <div className="field"><label>Address</label><input value={listingForm.display_address} onChange={(e) => setListingForm({ ...listingForm, display_address: e.target.value })} type="text" placeholder="Christian Basti, Guwahati" required /></div>
+              <div className="field"><label>City</label><input value={listingForm.city} onChange={(e) => setListingForm({ ...listingForm, city: e.target.value })} type="text" required /></div>
+              <div className="field"><label>State</label><input value={listingForm.state} onChange={(e) => setListingForm({ ...listingForm, state: e.target.value })} type="text" required /></div>
+              <div className="field"><label>Latitude</label><input value={listingForm.latitude} onChange={(e) => setListingForm({ ...listingForm, latitude: e.target.value })} type="number" step="0.0001" required /></div>
+              <div className="field"><label>Longitude</label><input value={listingForm.longitude} onChange={(e) => setListingForm({ ...listingForm, longitude: e.target.value })} type="number" step="0.0001" required /></div>
+              <div className="field"><label>Vehicle types</label><input value={listingForm.vehicle_types} onChange={(e) => setListingForm({ ...listingForm, vehicle_types: e.target.value })} type="text" placeholder="sedan, suv, hatchback" required /></div>
+              <div className="field"><label>Amenities</label><input value={listingForm.amenities} onChange={(e) => setListingForm({ ...listingForm, amenities: e.target.value })} type="text" placeholder="cctv, covered, qr access" /></div>
+              <div className="field"><label>Hourly rate (INR)</label><input value={listingForm.hourly_rate} onChange={(e) => setListingForm({ ...listingForm, hourly_rate: e.target.value })} type="number" min="0" step="1" required /></div>
+              <div className="field"><label>Daily rate (INR)</label><input value={listingForm.daily_rate} onChange={(e) => setListingForm({ ...listingForm, daily_rate: e.target.value })} type="number" min="0" step="1" required /></div>
+              <div className="field"><label>Space label</label><input value={listingForm.space_label} onChange={(e) => setListingForm({ ...listingForm, space_label: e.target.value })} type="text" required /></div>
+              <div className="field"><label>Capacity</label><input value={listingForm.space_capacity} onChange={(e) => setListingForm({ ...listingForm, space_capacity: e.target.value })} type="number" min="1" step="1" required /></div>
+              <div className="field"><label>Availability start</label><input value={listingForm.availability_start_time} onChange={(e) => setListingForm({ ...listingForm, availability_start_time: e.target.value })} type="time" required /></div>
+              <div className="field"><label>Availability end</label><input value={listingForm.availability_end_time} onChange={(e) => setListingForm({ ...listingForm, availability_end_time: e.target.value })} type="time" required /></div>
+              <label className="checkbox-row"><input checked={listingForm.space_has_ev_charger} onChange={(e) => setListingForm({ ...listingForm, space_has_ev_charger: e.target.checked })} type="checkbox" /><span>EV charger</span></label>
+              <label className="checkbox-row"><input checked={listingForm.busy_area} onChange={(e) => setListingForm({ ...listingForm, busy_area: e.target.checked })} type="checkbox" /><span>Apply busy-area premium</span></label>
+              <div className="inline-actions">
+                <button className="button" type="submit" disabled={savingListing || !profile}>{savingListing ? "Creating..." : "Create listing"}</button>
+              </div>
+              {!profile && <div className="subtle">⚠️ Create the host profile first so the listing can attach to a live host account.</div>}
+            </form>
+          </MotionReveal>
+        )}
+
+        {tab === "bookings" && (
+          <MotionReveal>
+            <div className="empty-state">
+              <div className="empty-state-icon">📅</div>
+              <div className="empty-state-title">No bookings yet</div>
+              <p>Once someone books your space, you will see all reservations here with full details.</p>
+            </div>
+          </MotionReveal>
+        )}
+
+        {tab === "earnings" && (
+          <MotionReveal>
+            <div className="dash-metrics" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+              <DashboardMetricCard label="Gross earnings" value={`Rs ${metrics?.gross_earnings ?? "0"}`} footnote="Total before commission" />
+              <DashboardMetricCard label="Commission (12%)" value={`Rs ${((Number(metrics?.gross_earnings ?? 0) * 0.12).toFixed(2))}`} footnote="Platform commission" />
+              <DashboardMetricCard label="Net earnings" value={`Rs ${((Number(metrics?.gross_earnings ?? 0) * 0.88).toFixed(2))}`} footnote="After commission" />
+            </div>
+          </MotionReveal>
+        )}
+      </main>
+    </div>
   );
-}
-
-function splitCsv(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function formatLabel(value: string): string {
-  return value.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }

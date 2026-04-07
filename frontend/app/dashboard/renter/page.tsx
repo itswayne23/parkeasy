@@ -1,132 +1,255 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
-import type { Route } from "next";
 import { useEffect, useMemo, useState } from "react";
-
+import { DashboardSidebar } from "@/components/dashboard-sidebar";
+import { DashboardMetricCard } from "@/components/dashboard-metric-card";
+import { MotionReveal } from "@/components/motion-reveal";
 import { clearSession, fetchBookingQr, fetchListingsByIds, fetchMe, fetchMyBookings, getAccessToken } from "@/lib/api";
 import { bookingPhase, formatBookingWindow, formatCurrency, humanizeLabel, statusTone } from "@/lib/format";
-import type { BookingQrResponse, BookingRead } from "@/lib/booking-types";
+import type { BookingRead } from "@/lib/booking-types";
 import type { ListingCard } from "@/lib/types";
 
 type DashboardState = {
   bookings: BookingRead[];
   listings: Record<string, ListingCard>;
-  latestQr: BookingQrResponse | null;
+  latestQr: { svg_data_url: string | null; payload: string | null } | null;
 };
 
-export default function RenterDashboardPage() {
+export default function RenterDashboard() {
   const [userName, setUserName] = useState<string | null>(null);
   const [state, setState] = useState<DashboardState>({ bookings: [], listings: {}, latestQr: null });
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState("overview");
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token) return;
-    const sessionToken = token;
+    if (!token) { setLoading(false); return; }
 
-    Promise.all([fetchMe(sessionToken), fetchMyBookings(sessionToken)])
+    Promise.all([fetchMe(token), fetchMyBookings(token)])
       .then(async ([user, bookings]) => {
         setUserName(user.full_name);
-        const listings = await fetchListingsByIds(bookings.map((booking) => booking.listing_id));
-        const latestConfirmed = bookings.find((booking) => booking.status === "confirmed");
-        const latestQr = latestConfirmed ? await fetchBookingQr(latestConfirmed.id, sessionToken).catch(() => null) : null;
+        const listings = await fetchListingsByIds(bookings.map((b) => b.listing_id));
+        const latestConfirmed = bookings.find((b) => b.status === "confirmed");
+        const latestQr = latestConfirmed
+          ? await fetchBookingQr(latestConfirmed.id, token).catch(() => null)
+          : null;
         setState({ bookings, listings, latestQr });
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load dashboard"));
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load dashboard"))
+      .finally(() => setLoading(false));
   }, []);
 
-  const upcomingBookings = useMemo(
-    () => state.bookings.filter((booking) => ["pending", "confirmed"].includes(booking.status)).length,
-    [state.bookings]
-  );
-  const confirmedBookings = useMemo(
-    () => state.bookings.filter((booking) => booking.status === "confirmed").length,
-    [state.bookings]
-  );
-  const totalValue = useMemo(
-    () => state.bookings.reduce((sum, booking) => sum + Number(booking.total_amount ?? 0), 0),
-    [state.bookings]
-  );
+  const upcomingBookings = useMemo(() => state.bookings.filter((b) => ["pending", "confirmed"].includes(b.status)).length, [state.bookings]);
+  const confirmedBookings = useMemo(() => state.bookings.filter((b) => b.status === "confirmed").length, [state.bookings]);
+  const totalValue = useMemo(() => state.bookings.reduce((sum, b) => sum + Number(b.total_amount ?? 0), 0), [state.bookings]);
+
+  const tabs = [
+    { id: "overview", label: "Overview" },
+    { id: "bookings", label: "My bookings" },
+    { id: "qr", label: "QR Code" },
+  ];
+
+  if (loading) {
+    return (
+      <div className="dashboard-shell">
+        <DashboardSidebar type="renter" userName="Renter" />
+        <main className="dash-main"><p className="subtle">Loading...</p></main>
+      </div>
+    );
+  }
+
+  if (!getAccessToken()) {
+    return (
+      <div className="dashboard-shell">
+        <DashboardSidebar type="renter" userName="Renter" />
+        <main className="dash-main">
+          <div className="empty-state">
+            <div className="empty-state-icon">🔒</div>
+            <div className="empty-state-title">Sign in required</div>
+            <p>Please sign in to view your booking dashboard.</p>
+            <Link className="button" href="/auth/sign-in">Sign in</Link>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
-    <main className="page page-stack">
-      <section className="hero hero-copy">
-        <span className="kicker">Renter cockpit</span>
-        <h1 className="section-title">See every booking, route, and scan moment at a glance.</h1>
-        <p className="lead">{userName ? `Signed in as ${userName}. Live renter bookings are now driving this dashboard.` : "Sign in to pull your live bookings from the backend."}</p>
-        <div className="inline-actions">
-          <Link className="button" href="/search">Find parking</Link>
-          <button className="button-secondary" onClick={() => { clearSession(); window.location.reload(); }} type="button">Reset session</button>
+    <div className="dashboard-shell">
+      <DashboardSidebar type="renter" userName={userName ?? "Renter"} />
+      <main className="dash-main">
+        <div className="dash-header">
+          <h1 className="dash-title">Renter Dashboard</h1>
+          <p className="subtle">See every booking, route, and scan moment at a glance</p>
         </div>
-      </section>
 
-      <section className="stats-row">
-        <article className="dashboard-card"><span className="kicker">Upcoming bookings</span><div className="value">{upcomingBookings}</div><div className="footnote">Pending and confirmed reservations ready for action.</div></article>
-        <article className="dashboard-card"><span className="kicker">Confirmed scans</span><div className="value">{confirmedBookings}</div><div className="footnote">Bookings that already carry QR-ready arrival confidence.</div></article>
-        <article className="dashboard-card"><span className="kicker">Total booked value</span><div className="value">{formatCurrency(totalValue)}</div><div className="footnote">Cumulative renter checkout value across live bookings.</div></article>
-      </section>
+        <div className="card-tabs">
+          {tabs.map((t) => (
+            <button key={t.id} className={`card-tab ${tab === t.id ? "card-tab-active" : ""}`} onClick={() => setTab(t.id)}>
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-      <section className="dual-panel">
-        <article className="panel">
-          <span className="kicker">QR readiness</span>
-          <h2 className="display-title">Your latest confirmed booking stays one glance away.</h2>
-          {state.latestQr?.svg_data_url ? (
-            <div className="qr-inline-wrap">
-              <img className="qr-image" src={state.latestQr.svg_data_url} alt="Latest booking QR code" />
-              <p className="subtle">Use this QR during arrival to complete the demo parking moment.</p>
-            </div>
-          ) : (
-            <p className="lead">Once a booking is confirmed through sandbox checkout, its QR appears here automatically.</p>
-          )}
-        </article>
-        <article className="panel">
-          <span className="kicker">Live booking states</span>
-          <div className="list">
-            {state.bookings.length ? state.bookings.slice(0, 3).map((booking) => (
-              <div className="glass-card" key={booking.id}>
-                <strong>{state.listings[booking.listing_id]?.title ?? booking.listing_id}</strong>
-                <div className="subtle">{bookingPhase(booking)}</div>
-              </div>
-            )) : <p className="subtle">No renter bookings yet. Reserve a listing to populate this feed.</p>}
+        {error && (
+          <div className="empty-state" style={{ marginBottom: "1.5rem", borderColor: "var(--accent-3)" }}>
+            <div className="empty-state-icon">⚠️</div>
+            <div className="empty-state-title">Error</div>
+            <p>{error}</p>
           </div>
-        </article>
-      </section>
-
-      <section className="panel-grid bookings-grid">
-        {state.bookings.length ? state.bookings.map((booking) => {
-          const listing = state.listings[booking.listing_id];
-          const tone = statusTone(booking.status);
-          return (
-            <article className="timeline-card booking-history-card" key={booking.id}>
-              <div className="dashboard-head">
-                <div>
-                  <span className="kicker">{humanizeLabel(booking.unit)}</span>
-                  <h2 className="display-title">{listing?.title ?? "Live booking"}</h2>
-                </div>
-                <span className={`pill ${tone}`}>{humanizeLabel(booking.status)}</span>
-              </div>
-              <p className="subtle">{listing?.address ?? "Listing details loading"}</p>
-              <div className="booking-summary compact-summary">
-                <div className="summary-row"><span>Window</span><strong>{formatBookingWindow(booking.start_at, booking.end_at)}</strong></div>
-                <div className="summary-row"><span>Total</span><strong>{formatCurrency(booking.total_amount)}</strong></div>
-                <div className="summary-row"><span>State</span><strong>{bookingPhase(booking)}</strong></div>
-              </div>
-              <div className="inline-actions">
-                <Link className="button-secondary" href={`/listings/${booking.listing_id}` as Route}>Open listing</Link>
-              </div>
-            </article>
-          );
-        }) : (
-          <article className="panel">
-            <span className="kicker">No bookings yet</span>
-            <h2 className="display-title">Your renter history will land here.</h2>
-            <p className="lead">Create a quote from any listing, complete the sandbox payment, and this page will turn into a booking ledger.</p>
-          </article>
         )}
-      </section>
 
-      {error ? <article className="panel"><p className="subtle booking-error">{error}</p></article> : null}
-    </main>
+        {tab === "overview" && (
+          <>
+            <div className="dash-metrics">
+              <DashboardMetricCard label="Upcoming" value={upcomingBookings} footnote="Pending & confirmed" />
+              <DashboardMetricCard label="Confirmed" value={confirmedBookings} />
+              <DashboardMetricCard label="Total value" value={formatCurrency(totalValue)} />
+              <DashboardMetricCard label="Bookings total" value={state.bookings.length} />
+            </div>
+
+            <div className="quick-actions">
+              <Link className="quick-action" href="/search">
+                <span className="quick-action-icon">🔍</span>Find parking
+              </Link>
+              <button className="quick-action" onClick={() => setTab("bookings")}>
+                <span className="quick-action-icon">📅</span>View bookings
+              </button>
+              <button className="quick-action" onClick={() => setTab("qr")}>
+                <span className="quick-action-icon">📱</span>QR code
+              </button>
+            </div>
+
+            <MotionReveal>
+              <div className="data-table-wrap">
+                <div className="data-table-header">
+                  <h3>Recent Bookings</h3>
+                  <span className="status-badge status-badge-active">{state.bookings.length} bookings</span>
+                </div>
+                {state.bookings.length === 0 ? (
+                  <div style={{ padding: "2.5rem", textAlign: "center" }}>
+                    <div className="empty-state">
+                      <div className="empty-state-icon">📅</div>
+                      <div className="empty-state-title">No bookings yet</div>
+                      <p>Book a parking spot to see your history here.</p>
+                      <Link className="button" href="/search">Browse listings</Link>
+                    </div>
+                  </div>
+                ) : (
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Listing</th>
+                        <th>Status</th>
+                        <th>Amount</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.bookings.map((b) => (
+                        <tr key={b.id}>
+                          <td><strong style={{ color: "var(--text)" }}>{state.listings[b.listing_id]?.title ?? b.listing_id}</strong></td>
+                          <td>
+                            <span className={`status-badge status-badge-${statusTone(b.status)}`}>
+                              {humanizeLabel(b.status)}
+                            </span>
+                          </td>
+                          <td>{formatCurrency(b.total_amount)}</td>
+                          <td><Link className="nav-pill" href={`/listings/${b.listing_id}`}>View</Link></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </MotionReveal>
+
+            {state.latestQr?.svg_data_url && (
+              <MotionReveal>
+                <div className="data-table-wrap" style={{ marginTop: "1.5rem" }}>
+                  <div className="data-table-header">
+                    <h3>Your Latest QR</h3>
+                    <span className="status-badge status-badge-active">Ready to scan</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
+                    <div className="booking-summary" style={{ alignItems: "center" }}>
+                      <img className="qr-image" src={state.latestQr.svg_data_url} alt="Booking QR code" />
+                      <p className="subtle">Present this QR code to complete the parking check-in.</p>
+                    </div>
+                  </div>
+                </div>
+              </MotionReveal>
+            )}
+          </>
+        )}
+
+        {tab === "bookings" && (
+          <MotionReveal>
+            <div className="data-table-wrap">
+              <div className="data-table-header">
+                <h3>Booking History</h3>
+                <span className="status-badge status-badge-active">{state.bookings.length} bookings</span>
+              </div>
+              {state.bookings.length === 0 ? (
+                <div style={{ padding: "2.5rem", textAlign: "center" }}>
+                  <div className="empty-state">
+                    <div className="empty-state-icon">📅</div>
+                    <div className="empty-state-title">Empty booking history</div>
+                    <p>Your renter history will appear here after booking a parking spot.</p>
+                    <Link className="button" href="/search">Find parking</Link>
+                  </div>
+                </div>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Listing</th>
+                      <th>Unit</th>
+                      <th>Status</th>
+                      <th>Window</th>
+                      <th>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.bookings.map((b) => (
+                      <tr key={b.id}>
+                        <td><strong style={{ color: "var(--text)" }}>{state.listings[b.listing_id]?.title ?? b.listing_id}</strong></td>
+                        <td>{humanizeLabel(b.unit)}</td>
+                        <td>
+                          <span className={`status-badge status-badge-${statusTone(b.status)}`}>
+                            {humanizeLabel(b.status)}
+                          </span>
+                        </td>
+                        <td>{formatBookingWindow(b.start_at, b.end_at)}</td>
+                        <td>{formatCurrency(b.total_amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </MotionReveal>
+        )}
+
+        {tab === "qr" && (
+          <MotionReveal>
+            {state.latestQr?.svg_data_url ? (
+              <div className="booking-summary" style={{ padding: "2rem", justifyItems: "center" }}>
+                <img className="qr-image" src={state.latestQr.svg_data_url} alt="Booking QR code" />
+                <p className="subtle">Use this QR during arrival to complete the demo parking moment.</p>
+              </div>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-state-icon">📱</div>
+                <div className="empty-state-title">No QR available</div>
+                <p>Once a booking is confirmed through sandbox checkout, its QR appears here automatically.</p>
+              </div>
+            )}
+          </MotionReveal>
+        )}
+      </main>
+    </div>
   );
 }

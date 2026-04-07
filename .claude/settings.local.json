@@ -1,7 +1,31 @@
 {
   "permissions": {
     "allow": [
-      "Bash(openclaude agents:*)"
+      "Bash(openclaude agents:*)",
+      "WebFetch(domain:21st.dev)",
+      "Bash(npm run:*)",
+      "Bash(source venv/Scripts/activate)",
+      "Bash(pip install:*)",
+      "Bash(python -m uvicorn app.main:app --host 127.0.0.1 --port 8001)",
+      "Bash(curl -s http://127.0.0.1:8001/health)",
+      "Bash(curl -s http://localhost:3001/)",
+      "Bash(curl:*)",
+      "Bash(netstat -tano)",
+      "Bash(taskkill:*)",
+      "Bash(wmic process:*)",
+      "Bash(tasklist /FI \"PID eq 41296\" /V)",
+      "Bash(python -m uvicorn app.main:app --host 127.0.0.1 --port 8001)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist)",
+      "Bash(tasklist /FI \"PID eq 31132\")",
+      "Bash(powershell -Command \"Get-Process -Id 31132 | Select-Object Name,Id,Path\")",
+      "Bash(venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001)",
+      "Bash(\"C:\\\\Files\\\\Documents\\\\OFFICE\\\\ParkEasy\\\\venv\\\\Scripts\\\\python.exe\" -m uvicorn app.main:app --host 127.0.0.1 --port 8001)",
+      "Bash(\"C:\\\\Files\\\\Documents\\\\OFFICE\\\\ParkEasy\\\\venv\\\\Scripts\\\\python.exe\" -c \"import aiosqlite; print\\(''aiosqlite available''\\)\")",
+      "Bash(docker compose:*)",
+      "Bash(docker-compose version:*)",
+      "Bash(\"C:\\\\Files\\\\Documents\\\\OFFICE\\\\ParkEasy\\\\venv\\\\Scripts\\\\python.exe\" -c \":*)",
+      "Bash(\"C:\\\\Files\\\\Documents\\\\OFFICE\\\\ParkEasy\\\\venv\\\\Scripts\\\\python.exe\" -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload)"
     ]
   }
 }

@@ -1,6 +1,8 @@
 from pathlib import Path
 from datetime import time
 import os
+import secrets
+import string
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,17 +44,29 @@ app.add_middleware(
 Base.metadata.create_all(bind=engine)
 
 
+def _generate_demo_password() -> str:
+    """Generate a random password for demo users."""
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    return "".join(secrets.choice(alphabet) for _ in range(12))
+
+
 def seed_demo_data() -> None:
     db = SessionLocal()
     try:
         if db.query(ParkingListing).first():
             return
 
+        # Generate random passwords for demo users
+        host_password = _generate_demo_password()
+        commercial_password = _generate_demo_password()
+        renter_password = _generate_demo_password()
+        admin_password = _generate_demo_password()
+
         host_user = User(
             email="host@parkeasyapp.com",
             phone="+919876543210",
             full_name="Aarav Host",
-            password_hash=hash_password("parkeasy123"),
+            password_hash=hash_password(host_password),
             role=UserRole.INDIVIDUAL_HOST,
             email_verified=True,
             phone_verified=True,
@@ -61,7 +75,7 @@ def seed_demo_data() -> None:
             email="operator@parkeasyapp.com",
             phone="+919876543211",
             full_name="CityLot Operator",
-            password_hash=hash_password("parkeasy123"),
+            password_hash=hash_password(commercial_password),
             role=UserRole.COMMERCIAL_HOST,
             email_verified=True,
             phone_verified=True,
@@ -70,7 +84,7 @@ def seed_demo_data() -> None:
             email="renter@parkeasyapp.com",
             phone="+919876543212",
             full_name="Riya Driver",
-            password_hash=hash_password("parkeasy123"),
+            password_hash=hash_password(renter_password),
             role=UserRole.RENTER,
             email_verified=True,
             phone_verified=True,
@@ -79,13 +93,24 @@ def seed_demo_data() -> None:
             email="admin@parkeasyapp.com",
             phone="+919876543213",
             full_name="Ops Admin",
-            password_hash=hash_password("parkeasy123"),
+            password_hash=hash_password(admin_password),
             role=UserRole.ADMIN,
             email_verified=True,
             phone_verified=True,
         )
         db.add_all([host_user, commercial_user, renter_user, admin_user])
         db.flush()
+
+        # Log demo credentials (in development only)
+        if settings.environment == "development":
+            print("\n" + "="*60)
+            print("DEMO USER CREDENTIALS (Development Only)")
+            print("="*60)
+            print(f"Host User: host@parkeasyapp.com / {host_password}")
+            print(f"Commercial User: operator@parkeasyapp.com / {commercial_password}")
+            print(f"Renter User: renter@parkeasyapp.com / {renter_password}")
+            print(f"Admin User: admin@parkeasyapp.com / {admin_password}")
+            print("="*60 + "\n")
 
         host_profile = HostProfile(
             user_id=host_user.id,

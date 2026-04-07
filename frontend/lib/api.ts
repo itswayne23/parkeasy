@@ -20,11 +20,36 @@ import type {
 } from "@/lib/booking-types";
 import { featuredListings } from "@/lib/mock-data";
 
-const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
+const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8001/api/v1";
 const TOKEN_KEY = "parkeasy_access_token";
 const REFRESH_KEY = "parkeasy_refresh_token";
 
-function mapListing(listing: any): ListingCard {
+interface ApiListing {
+  id: string;
+  title: string;
+  host_type?: string;
+  display_address: string;
+  latitude?: number | string;
+  longitude?: number | string;
+  hourly_rate?: number | string;
+  daily_rate?: number | string;
+  amenities?: string[];
+  vehicle_types?: string[];
+  status?: string;
+  description?: string | null;
+}
+
+interface ApiHostProfile {
+  id: string;
+  host_type: string;
+  business_name?: string | null;
+  bio?: string | null;
+  approval_status: string;
+  is_identity_verified?: boolean;
+  photo_url?: string | null;
+}
+
+function mapListing(listing: ApiListing): ListingCard {
   return {
     id: listing.id,
     title: listing.title,
@@ -40,7 +65,7 @@ function mapListing(listing: any): ListingCard {
   };
 }
 
-function mapHostProfile(profile: any): HostProfile {
+function mapHostProfile(profile: ApiHostProfile): HostProfile {
   return {
     id: profile.id,
     host_type: profile.host_type,
@@ -110,7 +135,7 @@ export async function fetchLiveListings(): Promise<ListingCard[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 3000);
   try {
-    const data = await apiGet<any[]>("/search?latitude=26.1824&longitude=91.7510&radius_km=10", undefined, controller.signal);
+    const data = await apiGet<ApiListing[]>("/search?latitude=26.1824&longitude=91.7510&radius_km=10", undefined, controller.signal);
     if (!Array.isArray(data) || data.length === 0) {
       return featuredListings;
     }
@@ -124,7 +149,7 @@ export async function fetchLiveListings(): Promise<ListingCard[]> {
 
 export async function fetchLiveListing(id: string): Promise<ListingCard> {
   try {
-    const data = await apiGet<any>(`/listings/${id}`);
+    const data = await apiGet<ApiListing>(`/listings/${id}`);
     return mapListing(data);
   } catch {
     return featuredListings.find((item) => item.id === id) ?? featuredListings[0];
@@ -185,32 +210,32 @@ export async function fetchMyBookings(token: string): Promise<BookingRead[]> {
 }
 
 export async function fetchHostProfile(token: string): Promise<HostProfile> {
-  const data = await apiGet<any>("/users/host-profile", token);
+  const data = await apiGet<ApiHostProfile>("/users/host-profile", token);
   return mapHostProfile(data);
 }
 
 export async function upsertHostProfile(payload: HostProfilePayload, token: string): Promise<HostProfile> {
-  const data = await apiPut<any>("/users/host-profile", payload, token);
+  const data = await apiPut<ApiHostProfile>("/users/host-profile", payload, token);
   return mapHostProfile(data);
 }
 
 export async function fetchMyListings(token: string): Promise<ListingCard[]> {
-  const data = await apiGet<any[]>("/listings", token);
+  const data = await apiGet<ApiListing[]>("/listings", token);
   return data.map(mapListing);
 }
 
 export async function createListing(payload: ListingPayload, token: string): Promise<ListingCard> {
-  const data = await apiPost<any>("/listings", payload, token);
+  const data = await apiPost<ApiListing>("/listings", payload, token);
   return mapListing(data);
 }
 
 export async function publishListing(listingId: string, token: string): Promise<ListingCard> {
-  const data = await apiPost<any>(`/listings/${listingId}/publish`, {}, token);
+  const data = await apiPost<ApiListing>(`/listings/${listingId}/publish`, {}, token);
   return mapListing(data);
 }
 
 export async function unpublishListing(listingId: string, token: string): Promise<ListingCard> {
-  const data = await apiPost<any>(`/listings/${listingId}/unpublish`, {}, token);
+  const data = await apiPost<ApiListing>(`/listings/${listingId}/unpublish`, {}, token);
   return mapListing(data);
 }
 

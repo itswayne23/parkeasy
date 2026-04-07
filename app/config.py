@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     database_url_override: str | None = None
 
     frontend_url: str = "http://localhost:3000"
-    backend_url: str = "http://localhost:8000"
+    backend_url: str = "http://localhost:8001"
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
     uploads_dir: str = "storage/uploads"

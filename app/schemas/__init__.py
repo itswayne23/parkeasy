@@ -47,6 +47,15 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UserRead(ORMBaseModel):
     id: str
     full_name: str
@@ -255,6 +264,7 @@ __all__ = [
     "BookingQuoteRequest",
     "BookingQuoteResponse",
     "BookingRead",
+    "ForgotPasswordRequest",
     "HostProfileRead",
     "HostProfileUpsert",
     "ListingCreate",
@@ -267,6 +277,7 @@ __all__ = [
     "PaymentRead",
     "PaymentVerificationRequest",
     "RefreshTokenRequest",
+    "ResetPasswordRequest",
     "SignupRequest",
     "TokenPair",
     "UserRead",
